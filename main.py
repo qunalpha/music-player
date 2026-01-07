@@ -4,11 +4,12 @@ from PIL import Image, ImageDraw
 from mutagen import File
 from mutagen.id3 import ID3, APIC
 import customtkinter
+import webbrowser
 import pygame
 import os
 import io
 
-version = "1.1 Beta"
+version = "1.2 (Unstable)"
 
 class App(CTk):
     def __init__(self, audio_player):
@@ -18,7 +19,6 @@ class App(CTk):
         self.after(201, lambda :self.iconbitmap(self.resource_path("resources/icon.ico")))
         self.geometry("720x420")
         self.minsize(720, 420)
-        self.resizable(0, 0)
 
         customtkinter.set_appearance_mode("dark")
         customtkinter.set_default_color_theme("dark-blue")
@@ -26,18 +26,25 @@ class App(CTk):
         self.update_rate = 250
 
         self.script_dir = os.path.dirname(__file__)
+        self.toplevel_window = None
+
+        self.cover_size = 200
 
         # Loading images
-        self.default_img_path = Image.open(os.path.join(self.script_dir, self.resource_path("resources/default.png")))
+        self.default_img_path = Image.open(os.path.join(self.script_dir, self.resource_path("resources/pfp.png")))
         self.play_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/play.png"))), size=(40, 40))
         self.pause_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/pause.png"))), size=(40, 40))
         self.prev_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/prev.png"))), size=(30, 30))
         self.next_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/next.png"))), size=(30, 30))
         self.mute_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/mute.png"))), size=(30, 30))
-        self.unmute_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/unmute.png"))), size=(30, 30))
+        self.vol_1_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/vol-1.png"))), size=(30, 30))
+        self.vol_2_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/vol-2.png"))), size=(30, 30))
+        self.vol_3_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/vol-3.png"))), size=(30, 30))
+        self.github_img = CTkImage(Image.open(os.path.join(self.script_dir, self.resource_path("resources/github.png"))), size=(30, 30))
 
         self.queue_hidden = False
-        self.queue_row = 0
+        self.current_index = 0
+        self.queue_buttons = []
 
         self.songs = []
         self.current_song = ""
@@ -64,14 +71,12 @@ class App(CTk):
 
         self.add_btn = CTkButton(self.side_frame, text="Add Music", font=("Segoe UI", 12, "bold"), fg_color="#7132CA", hover_color="#5B29A5", width=100, command=self.ask_dir)
         self.add_btn.grid(row=0, column=0, pady=5, padx=(5, 2))
-        self.clear_btn = CTkButton(self.side_frame, text="Clear All", font=("Segoe UI", 12, "bold"), fg_color="#7132CA", hover_color="#5B29A5", width=100, command=self.reset_ui)
+        self.clear_btn = CTkButton(self.side_frame, text="Clear All", font=("Segoe UI", 12, "bold"), fg_color="#7132CA", hover_color="#5B29A5", width=100, command=self.reset_queue_list)
         self.clear_btn.grid(row=0, column=1, pady=5, padx=(2, 5))
 
         self.queue_list_frame = CTkScrollableFrame(self.side_frame)
         self.queue_list_frame.grid(column=0, row=1, columnspan=2, sticky="nsew")
         self.queue_list_frame.grid_columnconfigure(0, weight=1)
-
-        self.queue_index = 0
 
         self.queue_label = CTkLabel(self.side_frame, text="Queue List", font=("Segoe UI", 20, "bold"))
         self.queue_label.grid(column=0, row=2, columnspan=2, pady=5)
@@ -88,12 +93,12 @@ class App(CTk):
         self.parent_frame = CTkFrame(self)
         self.parent_frame.grid(row=0, column=2, sticky="nsew")
         self.parent_frame.grid_columnconfigure(0, weight=1)
-        self.parent_frame.grid_rowconfigure(4, weight=1)
+        self.parent_frame.grid_rowconfigure(1, weight=1)
 
         self.music_name_label = CTkLabel(self.parent_frame, text="Currently not Playing", font=("Segoe UI", 12, "bold"))
         self.music_name_label.grid(row=0, column=0, pady=(30, 0))
 
-        self.default_cover = CTkImage(self.image_processer(self.default_img_path).resize((200, 200)), size=(200, 200))
+        self.default_cover = CTkImage(self.image_processer(self.default_img_path).resize((200, 200)), size=(self.cover_size, self.cover_size))
         self.cover_label = CTkLabel(self.parent_frame, text="", image=self.default_cover)
         self.cover_label.grid(row=1, column=0, pady=5)
 
@@ -112,32 +117,51 @@ class App(CTk):
 
         # Music Control UI
         self.control_frame = CTkFrame(self.parent_frame, fg_color="transparent")
-        self.control_frame.grid(row=3, column=0, pady=10, sticky="ew")
-        self.control_frame.grid_columnconfigure((0, 2), weight=1)
-        self.control_frame.grid_rowconfigure(0, weight=1)
+        self.control_frame.grid(row=3, column=0, pady=(0, 10), sticky="ew")
+        self.control_frame.grid_columnconfigure((0, 1, 2), weight=1, uniform='a')
 
-        control_ui_width = 15
+        self.filler_container = CTkFrame(self.control_frame, fg_color="transparent")
+        self.filler_container.grid(column=0, row=0, sticky="w", padx=25)
+        self.filler_container.grid_rowconfigure(0, weight=1)
 
-        self.play_button = CTkButton(self.control_frame, text="", image=self.play_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.media_controler)
+        self.playback_container = CTkFrame(self.control_frame, fg_color="transparent")
+        self.playback_container.grid(column=1, row=0)
+        self.playback_container.grid_rowconfigure(0, weight=1)
+
+        self.volume_container = CTkFrame(self.control_frame, fg_color="transparent")
+        self.volume_container.grid(column=2, row=0, sticky="e", padx=(0, 5))
+        self.volume_container.grid_rowconfigure(0, weight=1)
+        self.volume_container.grid_columnconfigure(1, weight=1)
+
+        control_ui_width = 10
+
+        # self.settings_button = CTkButton(self.filler_container, text="", image=self.settings_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.open_github)
+        # self.settings_button.grid()
+
+        self.github_button = CTkButton(self.filler_container, text="", image=self.github_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.open_github)
+        self.github_button.grid()
+
+        self.play_button = CTkButton(self.playback_container, text="", image=self.play_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.media_controler)
         self.play_button.grid(row=0, column=1)
 
-        self.prev_button = CTkButton(self.control_frame, text="", image=self.prev_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.rewind_music)
+        self.prev_button = CTkButton(self.playback_container, text="", image=self.prev_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.rewind_music)
         self.prev_button.grid(row=0, column=0)
 
-        self.next_button = CTkButton(self.control_frame, text="", image=self.next_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled")
+        self.next_button = CTkButton(self.playback_container, text="", image=self.next_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.next_music)
         self.next_button.grid(row=0, column=2)
 
-        self.mute_button = CTkButton(self.control_frame, text="", image=self.unmute_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.mute_volume)
+        self.mute_button = CTkButton(self.volume_container, text="", image=self.vol_3_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.mute_volume)
         self.mute_button.grid(row=0, column=3)
 
-        self.volume_slider = CTkSlider(self.control_frame, orientation="horizontal", button_color="#7132CA", progress_color="#C47BE4", button_hover_color="#5B29A5", command=self.change_volume)
-        self.volume_slider.grid(row=0, column=4, padx=(5, 15))
+        self.volume_slider = CTkSlider(self.volume_container, orientation="horizontal", width=100, button_color="#7132CA", progress_color="#C47BE4", button_hover_color="#5B29A5", command=self.change_volume)
+        self.volume_slider.grid(row=0, column=4, padx=(0, 5), sticky="w")
         self.volume_slider.set(audio_player.get_volume())
 
         # Directory Path Label
         self.current_path_label = CTkLabel(self.parent_frame, text=self.script_dir)
+        self.current_path_label.bind('<Double-Button-1>', self.open_file_dir)
         self.current_path_label.grid(row=5, column=0)
-
+        
     def hide_show_queue(self):
         if not self.queue_hidden:
             self.side_frame.grid_forget()
@@ -151,14 +175,24 @@ class App(CTk):
     def mute_volume(self):
         if audio_player.get_muted():
             audio_player.mute_music()
-            self.mute_button.configure(image=self.unmute_img)
+            self.update_volume_icon()
         else:
             audio_player.mute_music()
             self.mute_button.configure(image=self.mute_img)
 
     def change_volume(self, volume):
         audio_player.set_volume(volume)
-        self.mute_button.configure(image=self.unmute_img)
+        self.update_volume_icon()
+
+    def update_volume_icon(self):
+        if audio_player.get_int_volume() <= 0:
+            self.mute_button.configure(image=self.mute_img)
+        elif audio_player.get_int_volume() <= 34:
+            self.mute_button.configure(image=self.vol_1_img)
+        elif audio_player.get_int_volume() <= 67:
+            self.mute_button.configure(image=self.vol_2_img)
+        elif audio_player.get_int_volume() <= 100:
+            self.mute_button.configure(image=self.vol_3_img)
 
     def enable_control_btn(self):
         self.play_button.configure(state="normal")
@@ -179,10 +213,9 @@ class App(CTk):
         for widgets in self.winfo_children():
             widgets.destroy()
         self.load_ui()
-        # for song in self.songs:
-        # self.add_queue_list(self.songs[0])
-        for i in range(0, len(self.songs)):
-            self.add_queue_list(self.songs[i])
+        self.reset_queue_list(False)
+        for song in self.songs:
+            self.load_queue_list(song)
         self.reset_seeked()
         self.default_ui = True
         audio_player.reset()
@@ -207,14 +240,13 @@ class App(CTk):
     def seek_play(self, seek):
         self.seeked = int(seek)
         audio_player.seek_player(self.seeked)
+        self.play_button.configure(image=self.pause_img)
 
     def media_controler(self):
         if audio_player.get_if_play_pause() == "Pause":
-            # audio_player.pause_music()
             self.fade_out_pause()
             self.play_button.configure(image=self.play_img)
         elif audio_player.get_if_play_pause() == "Resume":
-            # audio_player.resume_music()
             self.fade_in_unpause()
             self.play_button.configure(image=self.pause_img)
         else:
@@ -225,9 +257,20 @@ class App(CTk):
         self.media_controler()
 
     def rewind_music(self):
-        # if audio_player.get_playback_position() <= 5:
-        self.reset_seeked()
-        audio_player.prev_music()
+        if self.get_absolute_playback() <= 5 and self.current_index >= 1:
+            self.reset_seeked()
+            self.on_click_queue(self.current_index - 1)
+            self.play_button.configure(image=self.pause_img)
+        else:
+            self.reset_seeked()
+            audio_player.rewind_music()
+            self.play_button.configure(image=self.pause_img)
+
+    def next_music(self):
+        if not self.current_index >= len(self.songs) - 1:
+            self.reset_seeked()
+            self.on_click_queue(self.current_index + 1)
+            self.play_button.configure(image=self.pause_img)
 
     def fade_out_pause(self):
         def _fade(vol):
@@ -262,18 +305,36 @@ class App(CTk):
         return title
 
     def add_queue_list(self, path):
-        # self.queue_list_frame
         self.songs.append(path)
-        name = f"{self.queue_index+1}.{audio_player.get_title(path)}"
-        button = CTkButton(self.queue_list_frame, text=self.shorten_title(name), font=("Segoe UI", 12), anchor="w", corner_radius=0, fg_color="transparent", hover_color="gray30", command=lambda: self.open_audio(path))
-        button.grid(row=self.queue_index, column=0, sticky="ew")
-        self.queue_index+=1
+        self.load_queue_list(path)
+
+    def on_click_queue(self, index):
+        self.queue_buttons[self.current_index].configure(fg_color="transparent", hover_color="gray30")
+        self.queue_buttons[index].configure(fg_color="#7132CA", hover_color="#5B29A5")
+        self.current_index = index
+        self.open_audio(index)
+
+    def load_queue_list(self, path):
+        name = f"{len(self.queue_buttons) + 1}.{audio_player.get_title(path)}"
+        button = CTkButton(self.queue_list_frame, text=self.shorten_title(name), font=("Segoe UI", 12), anchor="w", corner_radius=0, fg_color="transparent", hover_color="gray30", command=lambda i = len(self.queue_buttons): self.on_click_queue(i))
+        button.grid(row=len(self.queue_buttons), column=0, sticky="ew")
+        self.queue_buttons.append(button)
+
+    def reset_queue_list(self, reset_songs=True):
+        if reset_songs:
+            self.songs = []
+        for widgets in self.queue_list_frame.winfo_children():
+            widgets.destroy()
+        self.current_index = 0
+        self.queue_buttons = []
 
     def master_updater(self):
         current = audio_player.get_playback_position() + self.seeked
         duration = audio_player.get_duration()
         if audio_player.is_playing():
             self.set_seeker(current, duration, playing=True)
+        elif audio_player.check_for_end():
+            self.next_music()
         else:
             self.set_seeker(current, duration, playing=False)
             if not self.default_ui:
@@ -281,12 +342,12 @@ class App(CTk):
 
         self.after(self.update_rate, self.master_updater)
 
-    def get_filepath(self):
-        return self.filename
+    def get_absolute_playback(self):
+        return audio_player.get_playback_position() + self.seeked
 
     def ask_dir(self):
         try:
-            path = filedialog.askopenfilename(title="Select an audio file", filetypes=[
+            paths = filedialog.askopenfilenames(title="Select an audio file", filetypes=[
                 ("Audio files", "*.mp3 *.wav *.ogg *.flac"),
                 ("MP3 files", "*.mp3"),
                 ("WAV files", "*.wav"),
@@ -294,11 +355,13 @@ class App(CTk):
             ])
         except:
             return
-        
-        self.add_queue_list(path)
-        self.open_audio(path)
+        for song in paths:
+            self.add_queue_list(song)
+        if not audio_player.get_busy():
+            self.on_click_queue(0)
 
-    def open_audio(self, path):
+    def open_audio(self, index):
+        path = self.songs[index]
         audio_player.set_filepath(path)
         audio = File(path, easy=True)
         self.music_name_label.configure(text=f"{audio.get("title", [os.path.basename(path)])[0]} | {audio.get("artist", ["Unknown"])[0]}")
@@ -353,6 +416,12 @@ class App(CTk):
         cropped_img.putalpha(mask)
         return cropped_img
     
+    def open_file_dir(self, event):
+        try:
+            os.startfile(os.path.dirname(audio_player.get_filepath()))
+        except:
+            os.startfile(os.path.dirname(self.script_dir))
+    
     def resource_path(self, relative_path):
         try:
             base_path = sys._MEIPASS  # PyInstaller temp folder
@@ -360,16 +429,29 @@ class App(CTk):
             base_path = os.path.abspath(".")
         return os.path.join(base_path, relative_path)
 
+    def open_toplevel(self):
+        if self.toplevel_window is None or not self.toplevel_window.winfo_exists():
+            self.toplevel_window = ToplevelWindow(self) # create window if its None or destroyed
+        else:
+            self.after(200, self.toplevel_window.focus())  # if window exists focus it
+            
+    def open_github(self):
+        webbrowser.open("https://github.com/qunalpha")
+
 class audioPlayer():
     def __init__(self):
         super().__init__()
         # Initiliaze pygame mixer
+        pygame.init()
         pygame.mixer.init()
 
         self.paused = True
         self.volume = 0.7
         self.muted = False
         self.filepath = None
+
+        self.end_endevent = pygame.USEREVENT + 1
+        pygame.mixer.music.set_endevent(self.end_endevent)
 
         pygame.mixer.music.set_volume(self.get_volume())
         
@@ -401,17 +483,8 @@ class audioPlayer():
     def rewind_music(self):
         pygame.mixer.music.play()
 
-    def prev_music(self):
-        if pygame.mixer.music.get_pos() <= 5000:
-            self.rewind_music()
-        else:
-            self.play_music()
-
-    def next_music(self):
-        # pygame.mixer.music.
-        pass
-
     def seek_player(self, seconds):
+        self.paused = False
         pygame.mixer.music.play(start=seconds, fade_ms=500)
             
     def mute_music(self):
@@ -421,6 +494,12 @@ class audioPlayer():
         else:
             self.muted = False
             pygame.mixer.music.set_volume(self.get_volume())
+
+    def check_for_end(self):
+        for event in pygame.event.get():
+            if event.type == self.end_endevent:
+                return True
+        return False
 
     def get_if_play_pause(self):
         if pygame.mixer.music.get_busy():
@@ -481,6 +560,9 @@ class audioPlayer():
     
     def set_filepath(self, path):
         self.filepath = path
+
+    def get_filepath(self):
+        return self.filepath
 
     def reset(self):
         self.filepath = None
