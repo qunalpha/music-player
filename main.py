@@ -26,8 +26,7 @@ class App(CTk):
         self.update_rate = 250
 
         self.script_dir = os.path.dirname(__file__)
-        self.toplevel_window = None
-
+        
         self.cover_size = 200
 
         # Loading images
@@ -570,4 +569,5 @@ class audioPlayer():
         pygame.mixer.music.unload()
 
 audio_player = audioPlayer()
+
 App(audio_player)
