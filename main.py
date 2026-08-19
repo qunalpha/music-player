@@ -5,7 +5,6 @@ from mutagen import File
 from mutagen.id3 import ID3, APIC
 from jsonScript import jsonDatabase, version as json_version
 from audioPlayer import audioPlayer
-from ctkScrollableXY import ScrollableFrameXY
 import customtkinter
 import threading
 import webbrowser
