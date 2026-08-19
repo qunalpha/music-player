@@ -3,19 +3,17 @@ from customtkinter import filedialog
 from PIL import Image, ImageDraw
 from mutagen import File
 from mutagen.id3 import ID3, APIC
-from jsonScript import jsonFileManagment, jsonDatabase
-import customtkinter, mutagen
+from jsonScript import jsonDatabase, version as json_version
+from audioPlayer import audioPlayer
+from ctkScrollableXY import ScrollableFrameXY
+import customtkinter
+import threading
 import webbrowser
 import pygame
 import os
 import io
-try:
-    import pyi_splash
-    pyi_splash.close()
-except ImportError:
-    pass
 
-version = "2.0 (Beta)"
+version = "2.0.5 (Remastered)"
 
 class App(CTk):
     def __init__(self, audio_player):
@@ -25,7 +23,7 @@ class App(CTk):
         self.after(201, lambda :self.iconbitmap(self.resource_path("resources/icon.ico")))
         self.geometry("800x420")
         self.minsize(720, 420)
-        self.resizable(0, 0)
+        # self.resizable(0, 0)
 
         customtkinter.set_appearance_mode(audio_player.cache_data.load()["appearance_mode"])
         customtkinter.set_default_color_theme("dark-blue")
@@ -76,11 +74,13 @@ class App(CTk):
         self.config_variable_auto_update = False
 
         self.load_ui()
+        
         if not audio_player.get_muted():
-            self.update_volume_icon()
+            self.update_volume_ui()
+        # threading.Thread(target=self.master_updater, daemon=True).start()
         self.master_updater()
 
-        # self.bind("<Configure>", self.on_resize)
+        self.bind("<Configure>", self.on_resize)
         
         if audio_player.cache_data.load()["load_queue"]:
             self.load_db()
@@ -170,22 +170,22 @@ class App(CTk):
 
         control_ui_width = 10
 
-        self.config_button = CTkButton(self.filler_container, text="", image=self.config_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.open_config)
+        self.config_button = CTkButton(self.filler_container, text="", image=self.config_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), command=self.open_config)
         self.config_button.grid(row=0, column=1)
 
-        self.github_button = CTkButton(self.filler_container, text="", image=self.github_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.open_github)
+        self.github_button = CTkButton(self.filler_container, text="", image=self.github_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), command=self.open_github)
         self.github_button.grid(row=0, column=0)
 
-        self.play_button = CTkButton(self.playback_container, text="", image=self.play_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.media_controler)
+        self.play_button = CTkButton(self.playback_container, text="", image=self.play_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), state="disabled", command=self.media_controler)
         self.play_button.grid(row=0, column=1)
 
-        self.prev_button = CTkButton(self.playback_container, text="", image=self.prev_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.rewind_music)
+        self.prev_button = CTkButton(self.playback_container, text="", image=self.prev_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), state="disabled", command=self.rewind_music)
         self.prev_button.grid(row=0, column=0)
 
-        self.next_button = CTkButton(self.playback_container, text="", image=self.next_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", state="disabled", command=self.next_music)
+        self.next_button = CTkButton(self.playback_container, text="", image=self.next_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), state="disabled", command=self.next_music)
         self.next_button.grid(row=0, column=2)
 
-        self.mute_button = CTkButton(self.volume_container, text="", image=self.mute_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.mute_volume)
+        self.mute_button = CTkButton(self.volume_container, text="", image=self.mute_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), command=self.mute_volume)
         self.mute_button.grid(row=0, column=3)
 
         self.volume_slider = CTkSlider(self.volume_container, orientation="horizontal", width=100, button_color=self.ui_color, progress_color=self.progress_color, button_hover_color=self.hover_color, command=self.change_volume)
@@ -210,6 +210,12 @@ class App(CTk):
         self.config_back_button = CTkButton(self.config_nav_frame, text="Back", width=10, fg_color=self.ui_color, font=("Segoe UI", 12, "bold"), hover_color=self.hover_color, command=self.open_music_player)
         self.config_back_button.grid(row=0, column=0, pady=5, padx=5)
 
+        self.restore_default_button = CTkButton(self.config_nav_frame, text="Restore Default", width=20, fg_color=self.ui_color, font=("Segoe UI", 12, "bold"), hover_color=self.hover_color, command=self.reset_config)
+        self.restore_default_button.grid(row=0, column=2, pady=5, padx=(5, 3))
+
+        self.save_config_button = CTkButton(self.config_nav_frame, text="Save", width=20, fg_color="#008d07", font=("Segoe UI", 12, "bold"), hover_color="#005e05", command=self.save_config)
+        self.save_config_button.grid(row=0, column=3, pady=5, padx=(3, 5))
+
         self.config_menu_frame = CTkFrame(self.config_frame, corner_radius=0)
         self.config_menu_frame.grid(row=1, column=0, sticky="ns")
 
@@ -225,11 +231,20 @@ class App(CTk):
         self.variable_config_button = CTkButton(self.config_menu_frame, text="Variable", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(3))
         self.variable_config_button.grid(row=3, column=0, sticky="ew")
 
-        self.appearance_config_button = CTkButton(self.config_menu_frame, text="Appearance", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(4))
-        self.appearance_config_button.grid(row=4, column=0, sticky="ew")
+        self.library_config_button = CTkButton(self.config_menu_frame, text="Library", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(4))
+        self.library_config_button.grid(row=4, column=0, sticky="ew")
 
-        self.advanced_config_button = CTkButton(self.config_menu_frame, text="Advanced", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(5))
-        self.advanced_config_button.grid(row=5, column=0, sticky="ew")
+        self.appearance_config_button = CTkButton(self.config_menu_frame, text="Appearance", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(5))
+        self.appearance_config_button.grid(row=5, column=0, sticky="ew")
+
+        self.advanced_config_button = CTkButton(self.config_menu_frame, text="Advanced", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(6))
+        self.advanced_config_button.grid(row=6, column=0, sticky="ew")
+
+        self.log_config_button = CTkButton(self.config_menu_frame, text="Log", text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12), corner_radius=0, command=lambda: self.onclick_config_button(7))
+        self.log_config_button.grid(row=7, column=0, sticky="ew")
+
+        # self.queue_buttons[self.current_index].configure(fg_color="transparent", hover_color="gray30", font=("Segoe UI", 12))
+        # self.queue_buttons[index].configure(fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
 
         self.config_container_frame = CTkFrame(self.config_frame, corner_radius=0)
         self.config_container_frame.grid(row=1, column=1, sticky="nsew")
@@ -244,10 +259,10 @@ class App(CTk):
         self.mini_cover_label = CTkLabel(self.config_player_frame, text="", image=self.default_mini_cover)
         self.mini_cover_label.grid(row=0, column=0, padx=5, pady=5)
 
-        self.config_play_button = CTkButton(self.config_player_frame, text="", image=self.mini_play_img, width=10, fg_color="transparent", hover_color="gray30", state="disabled", command=self.media_controler)
+        self.config_play_button = CTkButton(self.config_player_frame, text="", image=self.mini_play_img, width=10, fg_color="transparent", hover_color=("gray70", "gray30"), state="disabled", command=self.media_controler)
         self.config_play_button.grid(row=0, column=1, padx=(5, 0))
 
-        self.config_next_button = CTkButton(self.config_player_frame, text="", image=self.mini_next_img, width=10, fg_color="transparent", hover_color="gray30", state="disabled", command=self.next_music)
+        self.config_next_button = CTkButton(self.config_player_frame, text="", image=self.mini_next_img, width=10, fg_color="transparent", hover_color=("gray70", "gray30"), state="disabled", command=self.next_music)
         self.config_next_button.grid(row=0, column=2)
 
         self.config_player_duration = CTkLabel(self.config_player_frame, text=f"--:-- / --:--", font=("Segoe UI", 14))
@@ -256,7 +271,7 @@ class App(CTk):
         self.config_player_title = CTkLabel(self.config_player_frame, text="Currently Not Playing", font=("Segoe UI", 14, "bold"))
         self.config_player_title.grid(row=0, column=5, padx=5)
 
-        self.config_mute_button = CTkButton(self.config_player_frame, text="", image=self.mini_mute_img, width=control_ui_width, fg_color="transparent", hover_color="gray30", command=self.mute_volume)
+        self.config_mute_button = CTkButton(self.config_player_frame, text="", image=self.mini_mute_img, width=control_ui_width, fg_color="transparent", hover_color=("gray70", "gray30"), command=self.mute_volume)
         self.config_mute_button.grid(row=0, column=7, padx=5)
 
         ### Config menu frame ui
@@ -281,7 +296,8 @@ class App(CTk):
         self.playback_config_frame.grid_columnconfigure(0, weight=1)
 
         CTkLabel(self.playback_config_frame, text="Starting Fade", font=("Segoe UI", 14, "bold")).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
-        self.config_entry_1 = CTkEntry(self.playback_config_frame, width=80, height=20, textvariable=IntVar(value=audio_player.get_fade_ms()))
+        self.config_entry_1 = CTkEntry(self.playback_config_frame, width=80, height=20, validate="key", validatecommand=(self.register(self.only_integer), "%P"))
+        self.config_entry_1.insert(0, audio_player.get_fade_ms())
         self.config_entry_1.grid(row=0, column=1, padx=5, pady=(10, 5), sticky="e")
         CTkLabel(self.playback_config_frame, text="ms", font=("Segoe UI", 12, "italic")).grid(row=0, column=2, padx=(5, 10), pady=(10, 5), sticky="e")
 
@@ -295,6 +311,9 @@ class App(CTk):
         self.config_slider_1.set(audio_player.get_volume())
         self.config_label_1 = CTkLabel(self.audio_config_frame, text=f"{audio_player.get_int_volume()}%", anchor="e", width=32, font=("Segoe UI", 12, "bold"))
         self.config_label_1.grid(row=0, column=2, padx=(5, 10), pady=(10, 5), sticky="e")
+        CTkLabel(self.audio_config_frame, text="Mute", font=("Segoe UI", 14, "bold")).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.config_button_3 = CTkButton(self.audio_config_frame, text=f"{"Mute" if audio_player.get_muted() else "Unmute"}", font=("Segoe UI", 12, "bold"), width=80, fg_color=self.ui_color, hover_color=self.hover_color, command=self.mute_volume)
+        self.config_button_3.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="e")
 
         # Variable Config
         self.variable_config_frame = CTkFrame(self.config_container_frame, fg_color="transparent")
@@ -412,7 +431,8 @@ class App(CTk):
         self.advanced_config_frame.grid_columnconfigure(0, weight=1)
 
         CTkLabel(self.advanced_config_frame, text="Update Rate", font=("Segoe UI", 14, "bold")).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
-        self.config_entry_2 = CTkEntry(self.advanced_config_frame, width=80, height=20, textvariable=IntVar(value=self.update_rate))
+        self.config_entry_2 = CTkEntry(self.advanced_config_frame, width=80, height=20, validate="key", validatecommand=(self.register(self.only_integer), "%P"))
+        self.config_entry_2.insert(0, self.update_rate)
         self.config_entry_2.grid(row=0, column=1, padx=5, pady=(10, 5), sticky="e")
         CTkLabel(self.advanced_config_frame, text="ms", font=("Segoe UI", 12, "italic")).grid(row=0, column=2, padx=(5, 10), pady=(10, 5), sticky="e")
 
@@ -439,9 +459,13 @@ class App(CTk):
 
     def load_db(self):
         self.db = jsonDatabase("queue.json", ("path",))
-        for song in self.db.load():
-            self.songs.append(song["path"])
-            self.load_queue_list(song["path"])
+
+        def _add(songs):
+            for song in songs:
+                self.songs.append(song["path"])
+                self.load_queue_list(song["path"])
+
+        threading.Thread(target=_add, args=(self.db.load(),), daemon=False).start()
 
     def toggle_load_queue(self):
         save = audio_player.cache_data.load()
@@ -498,6 +522,40 @@ class App(CTk):
         self.config_variable_label_24.configure(text=audio_player.get_paused())
         self.config_variable_label_25.configure(text=audio_player.get_fade_ms())
         self.config_variable_label_26.configure(text=str(audio_player.get_filepath())[:70]+"...")
+
+    def on_resize(self, event):
+        if event.widget == self:
+            w = event.width
+            h = event.height
+            print(f"{w}, {h}")
+            self.cover_size = max(min(w, h) - 500, 200)
+            self.music_name_label.configure(font=("Segoe UI", h/30, "bold"))
+
+            if not self.default_ui and self.audio_cover:
+                self.audio_cover.configure(size=(self.cover_size, self.cover_size))
+            self.default_cover.configure(size=(self.cover_size, self.cover_size))
+
+            if max(w, h) >= 920:
+                self.cover_label.grid(row=1, column=0, padx=(50, 0), pady=25, sticky="sw")
+                self.music_name_label.grid(row=0, column=0, columnspan=2, pady=(30, 0), sticky="nsew")
+
+                # self.parent_frame.grid_columnconfigure(1, weight=1)
+                # self.parent_frame.grid_rowconfigure(0, weight=1)
+
+                self.seeker_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+                self.control_frame.grid(row=3, column=0, columnspan=2, pady=(0, 10), sticky="ew")
+                self.current_path_label.grid(row=5, column=0, columnspan=2)
+                pass
+            else:
+                self.cover_label.grid(row=1, column=0, padx=0, pady=5, sticky="nsew")
+                self.music_name_label.grid(row=0, column=0, columnspan=1, pady=(30, 0), sticky="nsew")
+                
+                # self.parent_frame.grid_columnconfigure(0, weight=1)
+                # self.parent_frame.grid_rowconfigure(1, weight=1)
+
+                self.seeker_frame.grid(row=2, column=0, columnspan=1, sticky="ew")
+                self.control_frame.grid(row=3, column=0, columnspan=1, pady=(0, 10), sticky="ew")
+                self.current_path_label.grid(row=5, column=0, columnspan=1)
         
     def hide_show_queue(self):
         if not self.queue_hidden:
@@ -512,17 +570,19 @@ class App(CTk):
     def mute_volume(self):
         if audio_player.get_muted():
             audio_player.mute_music()
-            self.update_volume_icon()
+            self.update_volume_ui()
+            self.config_button_3.configure(text="Mute")
         else:
             audio_player.mute_music()
             self.mute_button.configure(image=self.mute_img)
             self.config_mute_button.configure(image=self.mini_mute_img)
+            self.config_button_3.configure(text="Unmute")
 
     def change_volume(self, volume):
         audio_player.set_volume(volume)
-        self.update_volume_icon()
+        self.update_volume_ui()
 
-    def update_volume_icon(self):
+    def update_volume_ui(self):
         if audio_player.get_int_volume() <= 0:
             self.mute_button.configure(image=self.mute_img)
             self.config_mute_button.configure(image=self.mini_mute_img)
@@ -538,6 +598,7 @@ class App(CTk):
         self.volume_slider.set(audio_player.get_volume())
         self.config_slider_1.set(audio_player.get_volume())
         self.config_label_1.configure(text=f"{audio_player.get_int_volume()}%")
+        self.config_button_3.configure(text="Mute")
 
     def enable_control_btn(self):
         self.play_button.configure(state="normal")
@@ -562,7 +623,7 @@ class App(CTk):
         for widgets in self.winfo_children():
             widgets.grid_remove()
         self.load_ui()
-        self.update_volume_icon()
+        self.update_volume_ui()
         self.reset_queue_list(False)
         for song in self.songs:
             self.load_queue_list(song)
@@ -613,6 +674,8 @@ class App(CTk):
             self.media_controler()
 
     def rewind_music(self):
+        # Curroipt 0, 1 
+        # 2
         if self.get_absolute_playback() <= 5 and self.current_index >= 1:
             i = self.current_index
             while i >= 0:
@@ -621,8 +684,17 @@ class App(CTk):
                     self.on_click_queue(i)
                     break
             self.reset_seeked()
+            # self.on_click_queue(i)
             self.play_button.configure(image=self.pause_img)
             self.config_play_button.configure(image=self.mini_pause_img)
+
+            self.see_queue_list()
+
+        # elif self.get_absolute_playback() <= 5 and self.current_index >= 1 and self.current_index - 1 in self.corrupted_index:
+        #     self.reset_seeked()
+        #     self.on_click_queue(self.current_index - 2)
+        #     self.play_button.configure(image=self.pause_img)
+        #     self.config_play_button.configure(image=self.mini_pause_img)
         else:
             self.reset_seeked()
             audio_player.rewind_music()
@@ -630,6 +702,11 @@ class App(CTk):
             self.config_play_button.configure(image=self.mini_pause_img)
 
     def next_music(self):
+        # if not self.current_index >= len(self.songs) - 1 and not self.current_index + 1 in self.corrupted_index:
+        #     self.reset_seeked()
+        #     self.on_click_queue(self.current_index + 1)
+        #     self.play_button.configure(image=self.pause_img)
+        #     self.config_play_button.configure(image=self.mini_pause_img)
         if not self.current_index >= len(self.songs) - 1:
             i = self.current_index
             while i <= len(self.songs):
@@ -638,8 +715,22 @@ class App(CTk):
                     self.on_click_queue(i)
                     break
             self.reset_seeked()
+            # self.on_click_queue(i)
             self.play_button.configure(image=self.pause_img)
             self.config_play_button.configure(image=self.mini_pause_img)
+
+            self.see_queue_list()
+
+    def see_queue_list(self):
+        if len(self.queue_buttons) >= 0 and not self.default_ui:
+            y1, y2 = self.queue_list_frame._parent_canvas.yview()
+            y1 = y1 * len(self.queue_buttons) * self.queue_buttons[0].winfo_height()
+            y2 = y2 * len(self.queue_buttons) * self.queue_buttons[0].winfo_height()
+            y3 = self.current_index * self.queue_buttons[0].winfo_height()
+            if y1 >= y3:
+                self.queue_list_frame._parent_canvas.yview_scroll(int(y1-y3)*-1, "units")
+            elif y2 <= y3:
+                self.queue_list_frame._parent_canvas.yview_scroll(int(y3-y1), "units")
 
     def fade_out_pause(self):
         def _fade(vol):
@@ -715,14 +806,18 @@ class App(CTk):
         self.playback_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
         self.audio_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
         self.variable_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
+        self.library_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
         self.appearance_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
         self.advanced_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
+        self.log_config_button.configure(text_color=("black", "white"), fg_color="transparent", hover_color=("gray70", "gray30"), font=("Segoe UI", 12))
         self.general_config_frame.grid_forget()
         self.playback_config_frame.grid_forget()
         self.audio_config_frame.grid_forget()
         self.variable_config_frame.grid_forget()
+        self.library_config_frame.grid_forget()
         self.appearance_config_frame.grid_forget()
         self.advanced_config_frame.grid_forget()
+        self.log_config_frame.grid_forget()
         if index == 0:
             self.general_config_button.configure(text_color="white", fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
             self.general_config_frame.grid(row=0, column=0, sticky="nsew")
@@ -736,11 +831,34 @@ class App(CTk):
             self.variable_config_button.configure(text_color="white", fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
             self.variable_config_frame.grid(row=0, column=0, sticky="nsew")
         elif index == 4:
+            self.library_config_button.configure(text_color="white", fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
+            self.library_config_frame.grid(row=0, column=0, sticky="nsew")
+        elif index == 5:
             self.appearance_config_button.configure(text_color="white", fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
             self.appearance_config_frame.grid(row=0, column=0, sticky="nsew")
-        elif index == 5:
+        elif index == 6:
             self.advanced_config_button.configure(text_color="white", fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
             self.advanced_config_frame.grid(row=0, column=0, sticky="nsew")
+        elif index == 7:
+            self.log_config_button.configure(text_color="white", fg_color=self.ui_color, hover_color=self.hover_color, font=("Segoe UI", 12, "bold"))
+            self.log_config_frame.grid(row=0, column=0, sticky="nsew")
+
+    def save_config(self):
+        audio_player.set_fade_ms(int(self.config_entry_1.get()))
+        self.update_rate = int(self.config_entry_2.get())
+
+        cache_save = audio_player.cache_data.load()
+        cache_save["update_rate"] = self.update_rate
+        cache_save["fade_ms"] = audio_player.get_fade_ms()
+        audio_player.cache_data.save(cache_save)
+
+    def reset_config(self):
+        self.config_entry_1.delete(0, END)
+        self.config_entry_2.delete(0, END)
+        self.config_entry_1.insert(0, 500)
+        self.config_entry_2.insert(0, 250)
+
+        self.save_config()
 
     def master_updater(self):
         current = audio_player.get_playback_position() + self.seeked
@@ -753,8 +871,10 @@ class App(CTk):
             self.set_seeker(current, duration, playing=False)
             if not self.default_ui:
                 self.reset_ui()
+            # self.on_click_queue(0)
         if self.config_variable_auto_update:
             self.refresh_variable_value()
+        
         self.after(self.update_rate, self.master_updater)
 
     def get_absolute_playback(self):
@@ -770,12 +890,16 @@ class App(CTk):
             ])
         except:
             return
-        for song in paths:
-            self.add_queue_list(song)
-            if audio_player.cache_data.load()["load_queue"]:
-                self.db.add((song,))
-        if not audio_player.get_busy():
-            self.on_click_queue(0)
+        
+        def _add(paths):
+            for song in paths:
+                self.add_queue_list(song)
+                if audio_player.cache_data.load()["load_queue"]:
+                    self.db.add((song,))
+            if not audio_player.get_busy():
+                self.on_click_queue(0)
+
+        threading.Thread(target=_add, args=(paths,), daemon=False).start()
 
     def open_audio(self, index):
         path = self.songs[index]
@@ -806,11 +930,11 @@ class App(CTk):
         try:
             audio_player.set_filepath(path)
             audio = File(path, easy=True)
-            pygame.mixer.music.load(path)
+            audio_player.load_music(path)
             self.music_name_label.configure(text=f"{audio.get("title", [os.path.basename(path)])[0]} | {audio.get("artist", ["Unknown"])[0]}")
             self.config_player_title.configure(text=f"{audio.get("title", [os.path.basename(path)])[0]}")
             self.current_path_label.configure(text=path)
-            self.title(f"Qun Music Player | {audio.get("title", [os.path.basename(path)])[0]}")
+            self.title(f"{audio.get("title", [os.path.basename(path)])[0]} | Qun Music Player {version}")
             self.enable_control_btn()
             self.play_button.configure(image=self.pause_img)
             self.config_play_button.configure(image=self.mini_pause_img)
@@ -823,6 +947,7 @@ class App(CTk):
             if not index in self.corrupted_index:
                 self.corrupted_index.append(index)
             audio_player.reset()
+            self.reset_ui()
             self.next_music()
 
     def image_processer(self, img):
@@ -871,181 +996,8 @@ class App(CTk):
     def open_github(self):
         webbrowser.open("https://github.com/qunalpha")
 
-class audioPlayer():
-    def __init__(self):
-        super().__init__()
-        # Initiliaze pygame mixer
-        pygame.init()
-        pygame.mixer.init()
-
-        self.cache_data = jsonFileManagment("data.json",
-                                            [
-                                                ("appearance_mode", "System"),
-                                                ("ui_scale", 100),
-                                                ("volume", 0.7),
-                                                ("muted", False),
-                                                ("update_rate", 250),
-                                                ("fade_ms", 500),
-                                                ("load_queue", True),
-                                                ("load_control", True)
-                                            ])
-
-        self.paused = True
-        self.volume = self.cache_data.load()["volume"]
-        self.muted = self.cache_data.load()["muted"]
-        self.filepath = None
-        self.fade_ms = self.cache_data.load()["fade_ms"]
-
-        self.end_endevent = pygame.USEREVENT + 1
-        pygame.mixer.music.set_endevent(self.end_endevent)
-
-        pygame.mixer.music.set_volume(self.volume)
-        self.mute_calibrate()
-        
-    def play_music(self):
-        self.paused = False
-        pygame.mixer.music.play(fade_ms=self.fade_ms)
-
-    def stop_music(self):
-        self.paused = True
-        pygame.mixer.music.stop()
-
-    def pause_music(self):            
-        self.paused = True
-        pygame.mixer.music.pause()
-
-    def resume_music(self):
-        self.paused = False
-        pygame.mixer.music.unpause()
-
-    def play_pause(self):
-        if pygame.mixer.music.get_busy():
-            self.pause_music()
-        else:
-            if self.paused:
-                self.resume_music()
-            else:
-                self.play_music(-1)
-
-    def rewind_music(self):
-        pygame.mixer.music.play(fade_ms=self.fade_ms)
-
-    def seek_player(self, seconds):
-        self.paused = False
-        pygame.mixer.music.play(start=seconds, fade_ms=self.fade_ms)
-            
-    def mute_music(self):
-        if not self.muted:
-            self.muted = True
-            pygame.mixer.music.set_volume(0)
-        else:
-            self.muted = False
-            pygame.mixer.music.set_volume(self.get_volume())
-        
-        if audio_player.cache_data.load()["load_control"]:
-            cache_save = self.cache_data.load()
-            cache_save["muted"] = self.muted
-            self.cache_data.save(cache_save)
-
-    def mute_calibrate(self):
-        if self.muted:
-            pygame.mixer.music.set_volume(0)
-        else:
-            pygame.mixer.music.set_volume(self.get_volume())
-
-    def check_for_end(self):
-        for event in pygame.event.get():
-            if event.type == self.end_endevent:
-                return True
-        return False
-
-    def get_if_play_pause(self):
-        if pygame.mixer.music.get_busy():
-            return "Pause"
-        else:
-            if self.paused:
-                return "Resume"
-            else:
-                return "Play"
-
-    def get_playback_position(self):
-        pos = pygame.mixer.music.get_pos()
-        if pos < 0:
-            return -1
-        return pos // 1000
-    
-    def get_title(self, path):
-        try:
-            return File(path, easy=True).get("title", [os.path.basename(path)])[0]
-        except Exception as e:
-            return e
-
-    def get_duration(self):
-        try:
-            audio = File(self.filepath)
-            return int(audio.info.length)
-        except:
-            return 0
-    
-    def get_volume(self):
-        return self.volume
-    
-    def get_int_volume(self):
-        return int(self.volume * 100)
-    
-    def get_muted(self):
-        return self.muted
-
-    def get_busy(self):
-        return pygame.mixer.music.get_busy()
-    
-    def get_paused(self):
-        return self.paused
-    
-    def get_fade_ms(self):
-        return self.fade_ms
-
-    def temp_set_volume(self, volume):
-        pygame.mixer.music.set_volume(volume)
-    
-    def set_volume(self, volume):
-        self.volume = volume
-        self.muted = False
-        pygame.mixer.music.set_volume(self.volume)
-        if audio_player.cache_data.load()["load_control"]:
-            cache_save = self.cache_data.load()
-            cache_save["volume"] = self.volume
-            cache_save["muted"] = self.muted
-            self.cache_data.save(cache_save)
-
-    def set_fade_ms(self, fade_ms: int):
-        self.fade_ms = fade_ms
-        cache_save = self.cache_data.load()
-        cache_save["fade_ms"] = self.fade_ms
-        self.cache_data.save(cache_save)
-
-    def reset_fade_ms(self):
-        self.fade_ms = 500
-
-    def is_playing(self):
-        if self.get_busy():
-            return True
-        else:
-            if self.get_paused():
-                return True
-            else:
-                return False
-    
-    def set_filepath(self, path):
-        self.filepath = path
-
-    def get_filepath(self):
-        return self.filepath
-
-    def reset(self):
-        self.filepath = None
-        self.stop_music()
-        pygame.mixer.music.unload()
+    def only_integer(self, value):
+        return value.isdigit() or value == ""
 
 if __name__ == "__main__":
     audio_player = audioPlayer()
