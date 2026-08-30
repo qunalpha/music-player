@@ -18,14 +18,14 @@ This application was made to test my coding test to overcome errors and learn ne
 PIP Command to intall dependecies module -
 ```pip install customtkinter pillow mutagen pygame```
 <br>
-*While downloading pygame if you encounter error consider downloading pygame commmunity edition instead* For that run ```pip install pygame-ce```
+**Note -** *While downloading pygame if you encounter error consider downloading pygame commmunity edition instead* For that run ```pip install pygame-ce```
 
 ---
 
 Pyinstaller command to make it executable (Windows) -
 ```pyinstaller --onefile --windowed --name="qMusic Player" --icon="resources/icon.ico" --add-data "resources;resources" --add-data "jsonScript.py;." --splash "splash.png" main.py```
 <br>
-**Note-**Run the command in the file directory
+**Note -** Run the command in the file directory
 
 **Program Showcase**
 
