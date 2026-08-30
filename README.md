@@ -1,5 +1,5 @@
 # About the Program
-This application was made to test my coding test to overcome errors and learn new things during this journey :) still i havent finished this and im planning to add more things later anayways this program uses customtkinter for GUI, mutagen for audiofile details and pygame to play musics and im also using other scripts from my other projects like [jsonScript](https://github.com/qunalpha/jsonScript).
+This application was made to test my coding capability to overcome errors and learn new things during this journey :) still i havent finished this project and im planning to add more things later, anyways this program uses customtkinter for GUI, mutagen for audiofile details and pygame to play musics and im also using scripts from my other projects like [jsonScript](https://github.com/qunalpha/jsonScript).
 
 ### Python library used:-
 
@@ -15,17 +15,17 @@ This application was made to test my coding test to overcome errors and learn ne
   
 ---
 
-PIP Command to intall dependecies module -
+PIP Command to install dependencies module -
 ```pip install customtkinter pillow mutagen pygame```
 <br>
 **Note -** *While downloading pygame if you encounter error consider downloading pygame commmunity edition instead* For that run ```pip install pygame-ce```
 
 ---
 
-Pyinstaller command to make it executable (Windows) -
+Pyinstaller command to make it executable binary file(Windows) -
 ```pyinstaller --onefile --windowed --name="qMusic Player" --icon="resources/icon.ico" --add-data "resources;resources" --add-data "jsonScript.py;." --splash "splash.png" main.py```
 <br>
-**Note -** Run the command in the file directory
+**Note -** Run the command in the project directory
 
 **Program Showcase**
 
