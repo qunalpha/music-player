@@ -11,6 +11,11 @@ import webbrowser
 import pygame
 import os
 import io
+try: # To close splash screen
+    import pyi_splash
+    pyi_splash.close()
+except ImportError:
+    pass
 
 version = "2.0.5 (Remastered)"
 
